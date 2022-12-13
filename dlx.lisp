@@ -104,46 +104,72 @@ calls it, which is noted `h' in his paper)."
 algorithm as a list of indexes of the rows that fit the constraints."
   (mapcar #'dlx-node-data sol))
 
+(defun is-solution (head sol)
+  "Check if the current partial solution is a solution. By default we
+try to satisfy all constraints (complete cover) so we just check if
+there are any columns left to cover."
+  (declare (ignore sol))
+  (eq (dlx-node-right head) head))
+
 (defun search-dlx (head &key
                           (solcount nil)
-                          (printer 'print-dlx-solution))
+                          (printer #'print-dlx-solution)
+                          (select-col #'select-col)
+                          (is-solution #'is-solution))
   "Search for solutions. `head' is the root object. Pass
 `solcount' (integer) if you want to limit the number of solutions (by
 default it searches for all solutions, which is impractical for many
-problems). `printer' should be `nil', or a function that converts the
+problems). `printer' should be `NIL', or a function that converts the
 solution. The default printer will convert to row indexes. The print
 function receives a list of nodes selected by the algorithm. Check
 Knuth's paper to see how he suggests printing solution (page 5 at the
 bottom).
 
-If you pass `nil' for the `printer', this function will only count the
+If you pass `NIL' for the `printer', this function will only count the
 solutions, which is faster and should not do any consing. Otherwise it
 returns a list of solutions.
 
 Unless interrupted, the matrix will not be altered; even when the
 search is limited by `solcount', links will keep dancing until they
-get back to the original shape."
+get back to the original shape.
+
+Knuth's algorithm searches for a complete cover (select 1 in every
+column), but for various problems it might be useful to search for a
+partial cover. If that's the case, pass `is-solution' — must be a
+function of two arguments, the root node of the matrix and the current
+partial solution as a list of nodes. Return `T' if the solution is
+valid (in which case it collects it and backtracks for other
+solutions). Note that `printer' must be non-NIL in order to receive
+the partial solution.
+
+One final option to tune the algorithm is to pass your own
+implementation for `select-col'. The default selects the column with
+the minimum number of 1s, which Knuts suggests is best in most
+cases. It must be a function of one argument (the root of the matrix)
+and return a column object. Return `NIL' to abort the current branch
+and backtrack."
   (let ((solutions nil)
         (found 0))
     (labels ((run (sol)
-               (when (eq (dlx-node-right head) head)
+               (when (funcall is-solution head sol)
                  (when printer
                    (push (funcall printer sol) solutions))
                  (incf found)
                  (return-from run))
-               (let ((c (select-col head)))
-                 (dlx-cover-col c)
-                 (loop for r = (dlx-node-down c) then (dlx-node-down r)
-                       until (eq r c)
-                       until (and solcount (= found solcount))
-                       do (loop for j = (dlx-node-right r) then (dlx-node-right j)
-                                until (eq j r)
-                                do (dlx-cover-col (dlx-node-col j)))
-                          (run (when printer (cons r sol)))
-                          (loop for j = (dlx-node-left r) then (dlx-node-left j)
-                                until (eq j r)
-                                do (dlx-uncover-col (dlx-node-col j))))
-                 (dlx-uncover-col c))))
+               (let ((c (funcall select-col head)))
+                 (when c
+                   (dlx-cover-col c)
+                   (loop for r = (dlx-node-down c) then (dlx-node-down r)
+                         until (eq r c)
+                         until (and solcount (= found solcount))
+                         do (loop for j = (dlx-node-right r) then (dlx-node-right j)
+                                  until (eq j r)
+                                  do (dlx-cover-col (dlx-node-col j)))
+                            (run (when printer (cons r sol)))
+                            (loop for j = (dlx-node-left r) then (dlx-node-left j)
+                                  until (eq j r)
+                                  do (dlx-uncover-col (dlx-node-col j))))
+                   (dlx-uncover-col c)))))
       (run nil))
     (if printer solutions found)))
 
