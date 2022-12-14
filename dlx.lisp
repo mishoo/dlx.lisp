@@ -9,7 +9,8 @@
 
 (in-package #:dlx)
 
-(defstruct dlx-node
+(defstruct (dlx-node
+            (:print-object print-dlx-node))
   "A node in Knuth's fabulous data structure. For simplicity we use the
 same structure for all nodes (including headers), even though,
 depending on the node type, some fields might be unused."
@@ -21,17 +22,30 @@ depending on the node type, some fields might be unused."
   (right nil :type (or null dlx-node))
   (col nil :type (or null dlx-node)))
 
-(defun append-horiz (prev new)
+(defun print-dlx-node (node stream)
+  (cond
+    ((and (not (dlx-node-up node))
+          (not (dlx-node-down node)))
+     (format stream "#S(DLX / ~D)" (dlx-node-size node)))
+    ((not (dlx-node-col node))
+     (format stream "#S(DLX-COL ~A / ~D)" (dlx-node-data node) (dlx-node-size node)))
+    (t
+     (format stream "#S(DLX-NOD ~A ↑ ~A)"
+             (dlx-node-data node) (dlx-node-data (dlx-node-col node))))))
+
+(defun insert-horiz (anchor new)
   "Inserts `new' node horizontally in the circular doubly-linked list,
-after `prev'."
-  (setf (dlx-node-right new) (dlx-node-right prev)
-        (dlx-node-left (dlx-node-right prev)) new
-        (dlx-node-right prev) new
-        (dlx-node-left new) prev))
+before `anchor'. Returns the new node."
+  (incf (dlx-node-size anchor))
+  (setf (dlx-node-right new) anchor
+        (dlx-node-left new) (dlx-node-left anchor)
+        (dlx-node-right (dlx-node-left anchor)) new
+        (dlx-node-left anchor) new))
 
 (defun insert-vert (anchor new)
   "Inserts `new' node vertically in the circular doubly-linked list,
-before `anchor'."
+before `anchor'. Returns the new node."
+  (incf (dlx-node-size anchor))
   (setf (dlx-node-down new) anchor
         (dlx-node-up new) (dlx-node-up anchor)
         (dlx-node-down (dlx-node-up anchor)) new
@@ -48,31 +62,27 @@ Returns `head', the matrix entry point (the root object, as Knuth
 calls it, which is noted `h' in his paper)."
   (let ((ncols (length (aref matrix 0)))
         (head (make-dlx-node)))
+    (setf (dlx-node-left head) head
+          (dlx-node-right head) head)
     (loop repeat ncols
           for data = coldata then (cdr data)
-          for prev = head then node
           for node = (make-dlx-node :data (car data))
-          do (setf (dlx-node-right prev) node
-                   (dlx-node-left node) prev
-                   (dlx-node-up node) node
-                   (dlx-node-down node) node)
-          finally
-             (setf (dlx-node-left head) node
-                   (dlx-node-right node) head))
+          do (insert-horiz head node)
+             (setf (dlx-node-up node) node
+                   (dlx-node-down node) node))
     (loop for i from 0
           for row across matrix
-          do (loop with new and prev = nil
+          do (loop with new and first = nil
                    for col = (dlx-node-right head) then (dlx-node-right col)
                    for bit across row
                    unless (zerop bit)
                      do (setf new (make-dlx-node :col col :data i))
-                        (if prev
-                            (append-horiz prev new)
+                        (if first
+                            (insert-horiz first new)
                             (setf (dlx-node-left new) new
-                                  (dlx-node-right new) new))
-                        (insert-vert col new)
-                        (incf (dlx-node-size col))
-                        (setf prev new)))
+                                  (dlx-node-right new) new
+                                  first new))
+                        (insert-vert col new)))
     head))
 
 (defmacro find-best (data predicate exp &body init)
@@ -102,7 +112,7 @@ calls it, which is noted `h' in his paper)."
 (defun print-dlx-solution (sol)
   "The default solution printer. Returns the solution selected by the
 algorithm as a list of indexes of the rows that fit the constraints."
-  (mapcar #'dlx-node-data sol))
+  (map 'list #'dlx-node-data sol))
 
 (defun is-solution (head sol)
   "Check if the current partial solution is a solution. By default we
