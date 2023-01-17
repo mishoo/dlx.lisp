@@ -114,14 +114,15 @@ calls it, which is noted `h' in his paper)."
 algorithm as a list of indexes of the rows that fit the constraints."
   (map 'list #'dlx-node-data sol))
 
-(defun is-solution (head sol)
+(defun is-solution (head sol length)
   "Check if the current partial solution is a solution. By default we
 try to satisfy all constraints (complete cover) so we just check if
 there are any columns left to cover."
-  (declare (ignore sol))
+  (declare (ignore sol length))
   (eq (dlx-node-right head) head))
 
 (defun search-dlx (head &key
+                          (solbuffer nil)
                           (solcount nil)
                           (printer #'print-dlx-solution)
                           (select-col #'select-col)
@@ -160,10 +161,12 @@ and return a column object. Return `NIL' to abort the current branch
 and backtrack."
   (let ((solutions nil)
         (found 0))
-    (labels ((run (sol)
-               (when (funcall is-solution head sol)
+    (labels ((run (level sol)
+               (when (funcall is-solution head (or solbuffer sol) level)
                  (when printer
-                   (push (funcall printer sol) solutions))
+                   (if solbuffer
+                       (push (funcall printer (make-array level :displaced-to solbuffer)) solutions)
+                       (push (funcall printer sol) solutions)))
                  (incf found)
                  (return-from run))
                (let ((c (funcall select-col head)))
@@ -175,12 +178,16 @@ and backtrack."
                          do (loop for j = (dlx-node-right r) then (dlx-node-right j)
                                   until (eq j r)
                                   do (dlx-cover-col (dlx-node-col j)))
-                            (run (when printer (cons r sol)))
+                            (if solbuffer
+                                (progn
+                                  (setf (aref solbuffer level) r)
+                                  (run (incf level) nil))
+                                (run (incf level) (when printer (cons r sol))))
                             (loop for j = (dlx-node-left r) then (dlx-node-left j)
                                   until (eq j r)
                                   do (dlx-uncover-col (dlx-node-col j))))
                    (dlx-uncover-col c)))))
-      (run nil))
+      (run 0 nil))
     (if printer solutions found)))
 
 (defun dlx-cover-col (c)
