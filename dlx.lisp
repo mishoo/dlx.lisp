@@ -9,6 +9,9 @@
 
 (in-package #:dlx)
 
+(eval-when (:load-toplevel :compile-toplevel :execute)
+  (defparameter *optimize* '(optimize (speed 3) (safety 1) (space 0) (debug 0))))
+
 (defstruct (dlx-node
             (:print-object print-dlx-node))
   "A node in Knuth's fabulous data structure. For simplicity we use the
@@ -104,6 +107,8 @@ calls it, which is noted `h' in his paper)."
            finally (return (values ,best-data ,best-val)))))
 
 (defun select-col (head)
+  (declare (type dlx-node head)
+           #.*optimize*)
   ;; wish `loop' could do this..
   (find-best col minimizing (dlx-node-size col)
     for col = (dlx-node-right head) then (dlx-node-right col)
@@ -159,9 +164,18 @@ the minimum number of 1s, which Knuts suggests is best in most
 cases. It must be a function of one argument (the root of the matrix)
 and return a column object. Return `NIL' to abort the current branch
 and backtrack."
+  (declare (type dlx-node head)
+           (type (or null fixnum) solcount)
+           (type (or null (simple-array dlx-node (*))) solbuffer)
+           (type (function (dlx-node t fixnum)) is-solution)
+           (type (or null (function (t))) printer)
+           (type (function (dlx-node)) select-col)
+           #.*optimize*)
   (let ((solutions nil)
         (found 0))
+    (declare (type fixnum found))
     (labels ((run (level sol)
+               (declare (type fixnum level))
                (when (funcall is-solution head (or solbuffer sol) level)
                  (when printer
                    (if solbuffer
@@ -192,6 +206,8 @@ and backtrack."
 
 (defun dlx-cover-col (c)
   "Covers the given column."
+  (declare (type dlx-node c)
+           #.*optimize*)
   (setf (dlx-node-left (dlx-node-right c)) (dlx-node-left c)
         (dlx-node-right (dlx-node-left c)) (dlx-node-right c))
   (loop for i = (dlx-node-down c) then (dlx-node-down i)
@@ -204,6 +220,8 @@ and backtrack."
 
 (defun dlx-uncover-col (c)
   "Uncovers a column that was previously covered."
+  (declare (type dlx-node c)
+           #.*optimize*)
   (loop for i = (dlx-node-up c) then (dlx-node-up i)
         until (eq i c)
         do (loop for j = (dlx-node-left i) then (dlx-node-left j)
