@@ -195,8 +195,8 @@ and backtrack."
                             (if solbuffer
                                 (progn
                                   (setf (aref solbuffer level) r)
-                                  (run (incf level) nil))
-                                (run (incf level) (when printer (cons r sol))))
+                                  (run (1+ level) nil))
+                                (run (1+ level) (when printer (cons r sol))))
                             (loop for j = (dlx-node-left r) then (dlx-node-left j)
                                   until (eq j r)
                                   do (dlx-uncover-col (dlx-node-col j))))
